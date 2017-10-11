@@ -83,7 +83,7 @@ void MCParticleFilter::processEvent( LCEvent * evt ) {
 
     // Put conditional statements here to positively select MCParticles
 
-    // Add this MCParticle to the output collection
+    // Add this MCParticle to the output collection if the vertex distance squared exceeds 1.0 mm^2 from nominal IP
     if(rsq<1.0)mcparcol->addElement(mcp);
        
   } // end loop over MCParticles
