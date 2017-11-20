@@ -63,11 +63,12 @@ using namespace lcio ;
   std::string _inputParticleCollectionName;
   std::string _mcParticleCollectionName;
   std::string _outputParticleCollectionName;
-  double _calibration;
+  double _energyScaleFactor;
 int nrejected;
   //matching cuts
   TRandom3* rng;
-  int _cheatAngles;
+  int _smearAngles;
+  int _angularSmearingModel;
   double _dTheta;
   double _dPhi;
   double _allowedEnergyDeviation;

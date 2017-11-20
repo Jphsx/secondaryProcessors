@@ -1,16 +1,11 @@
 #include "PhotonCalibration.h"
 
-
-
-
 PhotonCalibration aPhotonCalibration ;
-
 
 PhotonCalibration::PhotonCalibration() : Processor("PhotonCalibration") {
 
   // modify processor description
   _description = "Adjusts Photons from filtered pandora pfos collection" ;
-
 
   // register steering parameters: name, description, class-variable, default value
 
@@ -19,66 +14,67 @@ PhotonCalibration::PhotonCalibration() : Processor("PhotonCalibration") {
                               _printing,
                                (int)5 ) ;
   
-   registerProcessorParameter("EnergyCalibration",
-			      " percent energy calibration",
-			      _calibration,
+  registerProcessorParameter( "EnergyScaleFactor",
+			      "Energy Scale Factor",
+			      _energyScaleFactor,
 			      (double)1.0);
 //matching parameters
-  registerProcessorParameter("CheatAngles",
-				"option 0 or 1 to cheat the angles using smearing model for MC photon direction",
-				_cheatAngles,
+  registerProcessorParameter( "SmearAngles",
+				"option 0 or 1 to smear the angles using smearing model and MC photon direction",
+				_smearAngles,
 				(int) 0);
 
-  registerProcessorParameter("dTheta",
-				"normally distributed theta std dev, for drawing random variates in new direction ",
-				_dTheta,
-				(double) 1.0);
+  registerProcessorParameter( "AngularSmearingModel",
+				"Energy dependence choice: 0 - stochastic, 1 - energy independent",
+				_angularSmearingModel,
+				(int) 0);
 
-  registerProcessorParameter("dPhi",
-				"normally distributed phi std dev, for drawing random variates in new direction ",
+  registerProcessorParameter( "dTheta",
+			      "normally distributed theta std dev (in units of radians) for drawing random variates in new direction ",
+			       _dTheta,
+			       (double) 0.001);
+
+  registerProcessorParameter( "dPhi",
+				"normally distributed phi std dev (in units of radians) for drawing random variates in new direction ",
 				_dPhi,
-				(double) 1.0);
+				(double) 0.001);
 
-  registerProcessorParameter("AllowedEnergyDeviation",
-			     " allowed energy deviation of MC and REC photon in GeV",
-			     _allowedEnergyDeviation,
-			    (double)999.0);
+  registerProcessorParameter( "AllowedEnergyDeviation",
+			      " allowed energy deviation of MC and REC photon in GeV",
+			      _allowedEnergyDeviation,
+			      (double)999.0);
  
-  registerProcessorParameter("AllowedThetaDeviation",
-			     " allowed theta deviation of MC and REC photon in radians",
-			     _allowedThetaDeviation,
-			    (double)3.14);
+  registerProcessorParameter( "AllowedThetaDeviation",
+			      " allowed theta deviation of MC and REC photon in radians",
+			      _allowedThetaDeviation,
+			      (double)3.14);
  
-  registerProcessorParameter("AllowedPhiDeviation",
-			     " allowed phi deviation of MC and REC photon in radians",
-                             _allowedPhiDeviation,
-			    (double)3.14);
+  registerProcessorParameter( "AllowedPhiDeviation",
+			      " allowed phi deviation of MC and REC photon in radians",
+                              _allowedPhiDeviation,
+			      (double)3.14);
 
-
- std::string inputParticleCollectionName = "PandoraPFOs";
+  std::string inputParticleCollectionName = "PandoraPFOs";
   registerInputCollection( LCIO::RECONSTRUCTEDPARTICLE,
                              "InputParticleCollectionName" ,
                              "Input Particle Collection Name "  ,
                              _inputParticleCollectionName,
                               inputParticleCollectionName);
 
- registerInputCollection( LCIO::MCPARTICLE,
+  registerInputCollection( LCIO::MCPARTICLE,
                            "MCParticleCollection" ,
                            "Name of the MCParticle input collection"  ,
                            _mcParticleCollectionName ,
                            std::string("MCParticle") ) ;
 
  // std::string outputParticleCollectionName = "FastReconstructedParticles";
-	std::string outputParticleCollectionName = "CalibratedPhotons";
+  std::string outputParticleCollectionName = "CalibratedPhotons";
   registerOutputCollection( LCIO::RECONSTRUCTEDPARTICLE,
                              "OutputParticleCollectionName" ,
 			     "Output Particle Collection Name "  ,
                              _outputParticleCollectionName,
                              outputParticleCollectionName);
-
 }
-  
-
 
 void PhotonCalibration::init() {
 
@@ -91,7 +87,6 @@ void PhotonCalibration::init() {
   nEvt = 0;
   nrejected =0;
 
-//  gROOT->ProcessLine("#include <vector>");
 }
 
 void PhotonCalibration::processRunHeader( LCRunHeader* run) {
@@ -126,11 +121,12 @@ std::cout<<" here? "<<std::endl;
   return tf;
 }
 bool PhotonCalibration::FindMCParticles( LCEvent* evt ){
-          bool tf = false;
+         bool tf = false;
 
   // clear old vector
 	 _mcpartvec.clear();
-	_mcpartflags.clear();
+	 _mcpartflags.clear();
+
          typedef const std::vector<std::string> StringVec ;
          StringVec* strVec = evt->getCollectionNames() ;
          for(StringVec::const_iterator name=strVec->begin(); name!=strVec->end(); name++){
@@ -140,15 +136,15 @@ bool PhotonCalibration::FindMCParticles( LCEvent* evt ){
                       tf = true;
                       for(unsigned int i=0;i<nelem;i++){
                           MCParticle* mcPart = dynamic_cast<MCParticle*>(col->getElementAt(i));
-                           _mcpartvec.push_back(mcPart);
-			   _mcpartflags.push_back(false);
+                          _mcpartvec.push_back(mcPart);
+			  _mcpartflags.push_back(false);      // initialization
                       }
                 }
           }
   
-          if(_printing>1)std::cout << "Find MCParticles : " << tf << "size " << _mcpartvec.size()<<std::endl; 
+          if(_printing>1)std::cout << "Find MCParticles : " << tf << " size " << _mcpartvec.size()<<std::endl; 
   
-                                                                       return tf;
+          return tf;
  }
 double* PhotonCalibration::resimulateDirection(TLorentzVector mcgamma){
     
@@ -159,8 +155,20 @@ double* PhotonCalibration::resimulateDirection(TLorentzVector mcgamma){
 //current model (still being validated)
 //dTheta is millrad deviation
 //do something like normal distribution width is something like dTheta/sqrt(E_mc )
-	double sigma1 = _dTheta/std::sqrt(mcgamma.E());
-	double sigma2 = _dPhi/std::sqrt(mcgamma.E());
+
+        double sigma1;
+        double sigma2;
+
+// Choose the angular smearing model
+        if(_angularSmearingModel == 0){                     // Stochastic
+           sigma1 = _dTheta/std::sqrt(mcgamma.E());
+	   sigma2 = _dPhi/std::sqrt(mcgamma.E());
+        }
+        else{                                               // Energy Independent
+           sigma1 = _dTheta;
+           sigma2 = _dPhi;
+        }
+
 /*	double phi = mcgamma.Phi();
         double theta = mcgamma.Theta();
         double dx = _dTheta/std::sqrt(mcgamma.E());//temp stuff to see if this mode actually works
@@ -201,6 +209,12 @@ double PhotonCalibration::safeAcos(double x){
  }
 
 int PhotonCalibration::getCorrespondingMCParticleIndex(TLorentzVector rec){
+
+// This needs to be reworked.    Graham.   In busy events it appears to currently pick up 
+// the first available match, and then leaves no particle to match with for subsequent ReconstructedParticles.
+// 
+// Matching would probably be better if based simply on angular deviation.
+
         // if(_mcpartvec.size() > 1) return -1 ;
  //       std::cout<<"size "<<_mcpartvec.size()<<std::endl;
         if(_mcpartvec.size() == 0) return -1;
@@ -211,18 +225,23 @@ int PhotonCalibration::getCorrespondingMCParticleIndex(TLorentzVector rec){
         double tempresidual1=-1;
         double tempresidual2=-1;
         double tempresidual3=-1;
-       TLorentzVector mc;
+        TLorentzVector mc;
 
         for(int i=0; i<_mcpartvec.size(); i++){
                 //compare angles
                 if(_mcpartflags.at(i) == true) continue;
 
                 mc.SetPxPyPzE(_mcpartvec[i]->getMomentum()[0],_mcpartvec[i]->getMomentum()[1],_mcpartvec[i]->getMomentum()[2],_mcpartvec[i]->getEnergy());
-	        tempresidual1 = fabs(rec.Theta() - mc.Theta());
-                tempresidual2 = fabs(rec.Phi() - mc.Phi());//dont forget to change this line also
-                tempresidual3 = fabs(rec.E() - mc.E());
 
-//	std::cout<<"residuals "<<tempresidual1<<" "<<tempresidual2<<" "<<tempresidual3<<std::endl;	 
+	       // tempresidual1 = fabs(rec.Theta() - mc.Theta());
+               // tempresidual2 = fabs(rec.Phi() - mc.Phi());//dont forget to change this line also
+               // tempresidual3 = fabs(rec.E() - mc.E());
+
+                tempresidual1 = (rec.Vect()).Angle(mc.Vect())/0.0015;             // Calculate angle in space between RP and MCP
+                tempresidual2 = tempresidual1;
+                tempresidual3 = fabs( (rec.E() - mc.E())/(0.18*sqrt(mc.E())) );   // Calculate number of standard deviations
+
+        	std::cout<<"residuals "<<tempresidual1<<" "<<tempresidual2<<" "<<tempresidual3<<std::endl;	 
                        if((closest_match_index==-1) &&
 				(tempresidual3  <= _allowedEnergyDeviation) &&
 				(tempresidual1 <= _allowedThetaDeviation) &&
@@ -234,7 +253,12 @@ int PhotonCalibration::getCorrespondingMCParticleIndex(TLorentzVector rec){
                                 e_residual = tempresidual3;
                         }
                    
-                        if(((tempresidual1+tempresidual2+tempresidual3) < (theta_residual+phi_residual+e_residual)) &&
+                        double bestSoFar = theta_residual*theta_residual + e_residual*e_residual;
+                        double currentOne = tempresidual1*tempresidual1 + tempresidual3*tempresidual3;
+
+//                        if(( (tempresidual1+tempresidual2+tempresidual3) < (theta_residual+phi_residual+e_residual) ) &&
+                        if(( currentOne < bestSoFar ) &&
+
 				(tempresidual3 <= _allowedEnergyDeviation) &&
 				(tempresidual1 <= _allowedThetaDeviation) &&
 				(tempresidual2 <= _allowedPhiDeviation) ){
@@ -267,14 +291,14 @@ int PhotonCalibration::getCorrespondingMCParticleIndex(TLorentzVector rec){
 //	_mcpartflags.at(closest_match_index) = true;	
 //	std::cout<<"returning match index "<<closest_match_index<<std::endl;
         return closest_match_index;
-
 }
 
 void PhotonCalibration::processEvent( LCEvent * evt ) {
- std::cout<<"starting process event"<<std::endl;
+ std::cout<<"starting to process event"<<std::endl;
+ std::cout << "======================================== event " << nEvt << std::endl ;
   //FindMCParticles(evt);
    FindPFOs(evt);
-   if(_cheatAngles) FindMCParticles(evt);
+   if(_smearAngles) FindMCParticles(evt);
 //  TRandom3* rng = new TRandom3();
   // Make a new vector of particles
   LCCollectionVec * calreccol = new LCCollectionVec(LCIO::RECONSTRUCTEDPARTICLE);
@@ -294,7 +318,7 @@ void PhotonCalibration::processEvent( LCEvent * evt ) {
 			ReconstructedParticleImpl* calRecoPart = new ReconstructedParticleImpl();
 			oldE = _pfovec.at(i)->getEnergy();
 
-			newE = _calibration*oldE; 
+			newE = _energyScaleFactor*oldE; 
 			
 			oldmom = _pfovec[i]->getMomentum();
 		//	for(int i=0; i
@@ -311,8 +335,8 @@ void PhotonCalibration::processEvent( LCEvent * evt ) {
 
 			//fix the photon direction based on MC direction
 			//use the already semi calibrated photon for better matching
-			if(_cheatAngles){
-				std::cout<<"cheating angles"<<std::endl;
+			if(_smearAngles){
+				std::cout<<"Smearing photon direction using MC direction"<<std::endl;
 				TLorentzVector gamma;
 				gamma.SetPxPyPzE(newmom[0],newmom[1],newmom[2],newE);
 				TLorentzVector mcgamma;
@@ -366,15 +390,13 @@ void PhotonCalibration::processEvent( LCEvent * evt ) {
 		
 	}	
  
-
   nEvt++;
 
   // Add new collection to event
   evt->addCollection( calreccol , _outputParticleCollectionName.c_str() );
 
-  std::cout << "======================================== event " << nEvt << std::endl ;
+//  std::cout << "======================================== event " << nEvt << std::endl ;
  
-
 }
 
 

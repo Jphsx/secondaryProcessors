@@ -1,3 +1,4 @@
+
 #include "MCParticleFilter.h"
 
 #include <UTIL/LCRelationNavigator.h>
@@ -58,6 +59,7 @@ void MCParticleFilter::processEvent( LCEvent * evt ) {
   mcparcol->setSubset(true);      
 
   streamlog_out(MESSAGE) << " start processing event " << std::endl;
+  cout << "======================================== event " << nEvt << std::endl ;
 
   streamlog_out(DEBUG) << " mcp iterator and navigator " << std::endl;
   LCIterator<MCParticle> mcpIt( evt, _mcParticleCollectionName ) ;
@@ -73,7 +75,7 @@ void MCParticleFilter::processEvent( LCEvent * evt ) {
     
     if (!mcp) continue;
 
-    streamlog_out(DEBUG) << " MCParticle " << nmcp << " pdgid = " << mcp->getPDG() << " E = " << mcp->getEnergy() << std::endl; 
+    streamlog_out(DEBUG) << " MCParticle " << nmcp << " pdgid = " << mcp->getPDG() << " E = " << mcp->getEnergy() << " genStatus = " << mcp->getGeneratorStatus() << std::endl; 
     streamlog_out(DEBUG) << " Vertex   = " << mcp->getVertex()[0] << " " << mcp->getVertex()[1] << " " << mcp->getVertex()[2] << std::endl;
     streamlog_out(DEBUG) << " Momentum = " << mcp->getMomentum()[0] << " " << mcp->getMomentum()[1] << " " << mcp->getMomentum()[2] << std::endl; 
 
@@ -83,8 +85,9 @@ void MCParticleFilter::processEvent( LCEvent * evt ) {
 
     // Put conditional statements here to positively select MCParticles
 
-    // Add this MCParticle to the output collection if the vertex distance squared exceeds 1.0 mm^2 from nominal IP
-    if(rsq<1.0)mcparcol->addElement(mcp);
+    // Add this MCParticle to the output collection
+    // Quick hack - require stable particles for the output collection 
+    if(rsq<1.0 && mcp->getGeneratorStatus()==1)mcparcol->addElement(mcp);
        
   } // end loop over MCParticles
   
@@ -94,7 +97,7 @@ void MCParticleFilter::processEvent( LCEvent * evt ) {
   // Add new collection to event
   evt->addCollection( mcparcol , _outputParticleCollectionName.c_str() );
   
-  cout << "======================================== event " << nEvt << std::endl ;
+//  cout << "======================================== event " << nEvt << std::endl ;
   
 }
 
@@ -105,3 +108,5 @@ void MCParticleFilter::check( LCEvent * evt ) {
 void MCParticleFilter::end(){ 
 
 }
+
+
